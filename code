@@ -1,0 +1,121 @@
+/*
+ * Project: Smart Safety Street Lamp
+ * Features: SOS Emergency Mode (Touch), Adaptive Lighting (Ultrasonic), Day/Night Detection (LDR)
+ * Hardware: VEGA ARIES v3.0, Traffic Signal Module (3 LEDs), HC-SR04, Touch Sensor
+ */
+
+// --- PIN MAPPING (Safe Zone for VEGA ARIES v3.0) ---
+const int trigPin = 0;    // GPIO 18
+const int echoPin = 1;    // GPIO 19
+
+// Traffic Module Pins (Common Ground setup)
+const int greenPin = 3;   // GPIO 20 (Normal operation / High Traffic)
+const int yellowPin = 4;  // GPIO 21 (Idle mode)
+const int redPin = 5;     // GPIO 25 (SOS / Fault)
+
+const int touchPin =7 ;  // GPIO 26 (Touch Sensor)
+const int ldrPin = A0;    // ADC 0 (Day/Night Sensor)
+
+// --- VARIABLES ---
+int nightThreshold = 600;  // ADJUST THIS based on your LDR readings!
+int motionDist = 30;       // Detection range in cm
+bool sosMode = false;      // Tracks if we are in Emergency Mode
+
+void setup() {
+  // 1. Initialize Serial Communication
+  Serial.begin(115200);                
+  while (!Serial); // Wait for serial port to connect
+  
+  Serial.println("\n--- System Initializing ---");
+
+  // Outputs
+  pinMode(trigPin, OUTPUT);
+  pinMode(greenPin, OUTPUT);
+  pinMode(yellowPin, OUTPUT);
+  pinMode(redPin, OUTPUT);
+
+  // Inputs
+  pinMode(echoPin, INPUT);
+  pinMode(touchPin, INPUT); // Expecting HIGH when pressed
+  pinMode(ldrPin, INPUT);
+
+  Serial.println("--- System Ready: SOS Feature Active ---");
+  Serial.println("Ensure Serial Monitor is set to 115200 baud.");
+}
+
+void loop() {
+  // 1. CHECK SOS INPUT (Highest Priority)
+  int touchState = digitalRead(touchPin);
+
+  if (touchState == HIGH) {
+    sosMode = !sosMode; // Toggle Mode
+    
+    // Print mode status
+    if (sosMode) {
+      Serial.println(">>> SOS MODE ACTIVATED <<<");
+    } else {
+      Serial.println(">>> SOS MODE DEACTIVATED <<<");
+    }
+    
+    delay(500); // Debounce to prevent rapid toggling
+  }
+
+  // 2. EXECUTE SOS MODE (Flashing Red LED)
+  if (sosMode) {
+    // Strobe Effect
+    digitalWrite(redPin, HIGH);
+    digitalWrite(greenPin, LOW);
+    digitalWrite(yellowPin, LOW);
+    delay(200);
+    
+    digitalWrite(redPin, LOW);
+    delay(200);
+    
+    return; // SKIP the rest of the loop
+  }
+
+  // 3. NORMAL STREET LIGHT LOGIC (Only runs if SOS is OFF)
+  
+  // Read Sensors
+  int ldrValue = analogRead(ldrPin);
+  
+  // Ultrasonic Ranging
+  digitalWrite(trigPin, LOW); 
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH); 
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  long duration = pulseIn(echoPin, HIGH);
+  long distance = (duration * 0.034) / 2;
+
+  // --- SERIAL MONITOR OUTPUT ---
+  Serial.print("LDR: "); Serial.print(ldrValue);
+  Serial.print(" | Dist: "); Serial.print(distance);
+  Serial.print("cm | ");
+
+  // Day vs Night Logic
+  if (ldrValue > nightThreshold) { 
+    // NIGHT TIME
+    if (distance > 0 && distance < motionDist) {
+      // Traffic Detected -> Green ON
+      digitalWrite(greenPin, HIGH);
+      digitalWrite(yellowPin, LOW);
+      digitalWrite(redPin, LOW); 
+      Serial.println("Status: Night - Traffic (Green)");
+    } else {
+      // Idle -> Yellow ON
+      digitalWrite(greenPin, LOW);
+      digitalWrite(yellowPin, HIGH);
+      digitalWrite(redPin, LOW);
+      Serial.println("Status: Night - Idle (Yellow)");
+    }
+  } else {
+    // DAY TIME -> All OFF
+    digitalWrite(greenPin, LOW);
+    digitalWrite(yellowPin, LOW);
+    digitalWrite(redPin, LOW);
+    Serial.println("Status: Day - Lights Off");
+  }
+  
+  delay(100); // Stability delay
+}
